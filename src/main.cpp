@@ -2,20 +2,16 @@
 #include <Wire.h>
 #include <Adafruit_MPL3115A2.h>
 
-// NodeMCU pin names (change if you use a different board)
+
 constexpr uint8_t TRIG_PIN = D5;   // GPIO 14
 constexpr uint8_t ECHO_PIN = D6;   // GPIO 12
 
-// I²C: SDA=D2, SCL=D1 on most ESP8266 boards
+
 Adafruit_MPL3115A2 mpl;
 
-/**
- * Return distance in **centimetres**.
- * Returns NaN if the HC‑SR04 times out (>5 m).
- */
 float getDistanceCm(float tempC)
 {
-  const float soundSpeed = 331.3f + 0.606f * tempC;   // m s‑1
+  const float soundSpeed = 331.3f + 0.606f * tempC;
 
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -23,20 +19,19 @@ float getDistanceCm(float tempC)
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  // round‑trip time in µs; 30 000 µs ≈ 5 m
   const unsigned long dur = pulseIn(ECHO_PIN, HIGH, 30000);
 
-  if (dur == 0)           // timeout ⇒ no echo
+  if (dur == 0)
     return NAN;
 
-  const float dist_m = (dur * 1e-6f) * soundSpeed * 0.5f; // m
-  return dist_m * 100.0f;                                 // → cm
+  const float dist_m = (dur * 1e-6f) * soundSpeed * 0.5f;
+  return dist_m * 100.0f;
 }
 
 void setup()
 {
   Serial.begin(115200);
-  Wire.begin(D2, D1);        // SDA, SCL
+  Wire.begin(D2, D1);
 
   if (!mpl.begin()) {
     Serial.println(F("Could not find MPL3115A2 sensor – check wiring"));
@@ -56,10 +51,10 @@ void loop()
   bool collisionInbound = false;
 
   if (!isnan(currentCm)) {
-    if (currentCm <= 3.0f) {                        // extremely close
-      isCollision = getDistanceCm(tempC) >= 1000.0f; // HC‑SR04 overflow
+    if (currentCm <= 3.0f) {
+      isCollision = getDistanceCm(tempC) >= 1000.0f;
     }
-    else if (currentCm <= 15.0f) {                  // within 15 cm
+    else if (currentCm <= 15.0f) {
       collisionInbound = getDistanceCm(tempC) < currentCm;
     }
   }
@@ -74,6 +69,6 @@ void loop()
   if (collisionInbound) Serial.print(F("  **INBOUND**"));
 
   Serial.println();
-  delay(100);    // avoid spamming the sensor
+  delay(100);
 }
 
