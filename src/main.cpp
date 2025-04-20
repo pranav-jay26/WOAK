@@ -1,14 +1,21 @@
-#include "Arduino.h"
-#include "Wire.h"
-#include "Adafruit_MPL3115A2.h"
+#include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_MPL3115A2.h>
 
-#define TRIG_PIN D5
-#define ECHO_PIN D6
+// NodeMCU pin names (change if you use a different board)
+constexpr uint8_t TRIG_PIN = D5;   // GPIO 14
+constexpr uint8_t ECHO_PIN = D6;   // GPIO 12
 
-Adafruit_MPL3115A2 mpl = Adafruit_MPL3115A2();
+// I²C: SDA=D2, SCL=D1 on most ESP8266 boards
+Adafruit_MPL3115A2 mpl;
 
-float getDistance(float temp_C) {
-  float soundSpeed = 331.3 + (0.606 + temp_C);
+/**
+ * Return distance in **centimetres**.
+ * Returns NaN if the HC‑SR04 times out (>5 m).
+ */
+float getDistanceCm(float tempC)
+{
+  const float soundSpeed = 331.3f + 0.606f * tempC;   // m s‑1
 
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -16,35 +23,57 @@ float getDistance(float temp_C) {
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  long duration = pulseIn(ECHO_PIN, HIGH);
+  // round‑trip time in µs; 30 000 µs ≈ 5 m
+  const unsigned long dur = pulseIn(ECHO_PIN, HIGH, 30000);
 
-  float distanceMeters = (duration / 1e6) * soundSpeed / 2;
+  if (dur == 0)           // timeout ⇒ no echo
+    return NAN;
 
-  return distanceMeters * 100;
-
+  const float dist_m = (dur * 1e-6f) * soundSpeed * 0.5f; // m
+  return dist_m * 100.0f;                                 // → cm
 }
 
-void setup() {
-  Serial.begin(9600);
-  Wire.begin(D2, D1);
+void setup()
+{
+  Serial.begin(115200);
+  Wire.begin(D2, D1);        // SDA, SCL
 
   if (!mpl.begin()) {
-    Serial.println("Could not find MPL3115A2 sensor");
-    while(1);
+    Serial.println(F("Could not find MPL3115A2 sensor – check wiring"));
+    while (true) delay(10);
   }
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
 }
 
-void loop() {
-  float temperature_C = mpl.getTemperature();
-  float distance_cm = getDistance(temperature_C);
+void loop()
+{
+  const float tempC      = mpl.getTemperature();
+  const float currentCm  = getDistanceCm(tempC);
 
-  Serial.print("Temperature: ");
-  Serial.print(temperature_C);
-  Serial.print(" °C, Distance: ");
-  Serial.print(distance_cm);
-  Serial.println(" cm");
+  bool isCollision      = false;
+  bool collisionInbound = false;
 
+  if (!isnan(currentCm)) {
+    if (currentCm <= 3.0f) {                        // extremely close
+      isCollision = getDistanceCm(tempC) >= 1000.0f; // HC‑SR04 overflow
+    }
+    else if (currentCm <= 15.0f) {                  // within 15 cm
+      collisionInbound = getDistanceCm(tempC) < currentCm;
+    }
+  }
+
+  Serial.print(F("T = "));
+  Serial.print(tempC, 1);
+  Serial.print(F(" °C | D = "));
+  Serial.print(currentCm, 1);
+  Serial.print(F(" cm"));
+
+  if (isCollision)      Serial.print(F("  **COLLISION**"));
+  if (collisionInbound) Serial.print(F("  **INBOUND**"));
+
+  Serial.println();
+  delay(100);    // avoid spamming the sensor
 }
+
